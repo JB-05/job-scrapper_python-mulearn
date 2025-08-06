@@ -23,41 +23,36 @@ def fetch_job_details(details_url):
         response.raise_for_status()
         soup = BeautifulSoup(response.text, 'html.parser')
 
-        # Example assumptions based on common page layouts:
-        # Adjust selectors below to match actual details page HTML structure!
-
-        # Try to get Job Title from details page (fallback if differs from main page)
+   
         title_tag = soup.find('h1') or soup.find('h2')
         if title_tag and title_tag.text.strip():
             data['Job Title'] = title_tag.text.strip()
 
-        # Location, Experience, Salary might be in a details table or divs — let's look for labels
-
-        # Find all rows or divs containing labels and values
         possible_rows = soup.find_all(['tr', 'div'], class_=lambda x: x and ('job-detail' in x or 'job-info' in x))
 
-        # Sometimes the details are inside dl, dd/dt pairs or simple paragraphs; let's search more broadly:
+     
         text_blocks = soup.find_all(text=True)
 
-        # We'll try a simple heuristic search for keywords near text
 
-        # Create a text blob of the page (lowercase) for keyword searches:
+
         page_text = soup.get_text(separator='\n').lower()
 
-        # Location detection:
+ 
+
         if "location" in page_text:
-            # Try to find a label and value
+   
             loc = extract_detail_by_label(soup, ['location'])
             if loc:
                 data['Location'] = loc
 
-        # Experience detection:
         if "experience" in page_text:
             exp = extract_detail_by_label(soup, ['experience', 'exp'])
             if exp:
                 data['Experience'] = exp
 
-        # Salary detection:
+  
+
+
         if "salary" in page_text:
             sal = extract_detail_by_label(soup, ['salary', 'pay', 'package'])
             if sal:
@@ -73,8 +68,7 @@ def extract_detail_by_label(soup, labels):
     Helper to extract info based on label keywords.
     Tries to find a label (e.g. 'Location') and gets the adjacent value.
     """
-    # Find all elements that might contain label-value pairs
-    # Try table rows first
+   
     for tr in soup.find_all('tr'):
         tds = tr.find_all(['td', 'th'])
         if len(tds) >= 2:
@@ -84,8 +78,6 @@ def extract_detail_by_label(soup, labels):
                     value = tds[1].get_text(strip=True)
                     if value:
                         return value
-
-    # Try dl/dt/dd pattern
     dts = soup.find_all('dt')
     for dt in dts:
         label = dt.get_text(strip=True).lower()
@@ -97,14 +89,12 @@ def extract_detail_by_label(soup, labels):
                     if val:
                         return val
 
-    # Try paragraphs or spans with label:
+
     texts = soup.find_all(text=True)
     for i, text in enumerate(texts):
         low_text = text.lower()
         for key in labels:
             if key in low_text:
-                # Get next sibling text or parent sibling
-                # Very heuristic approach:
                 next_text = None
                 if i + 1 < len(texts):
                     next_text = texts[i + 1].strip()
@@ -142,7 +132,6 @@ def fetch_jobs_from_page(url):
                 if details_url.startswith('/'):
                     details_url = 'https://infopark.in' + details_url
 
-        # Fetch detailed info from details_url
         job_details = fetch_job_details(details_url) if details_url else {}
 
         jobs.append({
@@ -155,8 +144,6 @@ def fetch_jobs_from_page(url):
             'Salary': job_details.get('Salary', 'Not Available'),
             'Details URL': details_url or 'Not Available'
         })
-
-        # Polite delay to avoid hammering the server
         time.sleep(1)
 
     return jobs
