@@ -10,12 +10,14 @@ HEADERS = {
 }
 
 def fetch_job_details(details_url):
-    """Scrape Job Title, Location, Experience, Salary, etc from the job details page."""
+    """Scrape job details including JobTitle, Location, ExperienceRequired, SkillsRequired, Salary, and JobDescriptionSummary."""
     data = {
-        'Job Title': 'Not Available',
+        'JobTitle': 'Not Available',
         'Location': 'Not Available',
-        'Experience': 'Not Available',
-        'Salary': 'Not Available'
+        'ExperienceRequired': 'Not Available',
+        'SkillsRequired': 'Not Available',
+        'Salary': 'Not Available',
+        'JobDescriptionSummary': 'Not Available'
     }
 
     try:
@@ -23,40 +25,43 @@ def fetch_job_details(details_url):
         response.raise_for_status()
         soup = BeautifulSoup(response.text, 'html.parser')
 
-   
+        # Job title
         title_tag = soup.find('h1') or soup.find('h2')
         if title_tag and title_tag.text.strip():
-            data['Job Title'] = title_tag.text.strip()
-
-        possible_rows = soup.find_all(['tr', 'div'], class_=lambda x: x and ('job-detail' in x or 'job-info' in x))
-
-     
-        text_blocks = soup.find_all(text=True)
-
-
+            data['JobTitle'] = title_tag.text.strip()
 
         page_text = soup.get_text(separator='\n').lower()
 
- 
-
+        # Location
         if "location" in page_text:
-   
             loc = extract_detail_by_label(soup, ['location'])
             if loc:
                 data['Location'] = loc
 
-        if "experience" in page_text:
+        # Experience
+        if "experience" in page_text or "exp" in page_text:
             exp = extract_detail_by_label(soup, ['experience', 'exp'])
             if exp:
-                data['Experience'] = exp
+                data['ExperienceRequired'] = exp
 
-  
-
-
-        if "salary" in page_text:
-            sal = extract_detail_by_label(soup, ['salary', 'pay', 'package'])
+        # Salary
+        if "salary" in page_text or "package" in page_text or "pay" in page_text:
+            sal = extract_detail_by_label(soup, ['salary', 'package', 'pay'])
             if sal:
                 data['Salary'] = sal
+
+        # Skills
+        if "skills" in page_text or "skill" in page_text:
+            skills = extract_detail_by_label(soup, ['skills', 'skill'])
+            if skills:
+                data['SkillsRequired'] = skills
+
+        # Job description summary
+        desc_tag = soup.find('div', class_='job-description') or soup.find('p')
+        if desc_tag:
+            description = desc_tag.get_text(separator=' ', strip=True)
+            if description:
+                data['JobDescriptionSummary'] = description[:300]  # limit length if needed
 
     except Exception as e:
         print(f"Failed to get job details from {details_url}: {e}")
@@ -64,11 +69,8 @@ def fetch_job_details(details_url):
     return data
 
 def extract_detail_by_label(soup, labels):
-    """
-    Helper to extract info based on label keywords.
-    Tries to find a label (e.g. 'Location') and gets the adjacent value.
-    """
-   
+    """Finds details in <tr>/<dt> or nearby text based on label keywords."""
+    # Table rows
     for tr in soup.find_all('tr'):
         tds = tr.find_all(['td', 'th'])
         if len(tds) >= 2:
@@ -78,8 +80,8 @@ def extract_detail_by_label(soup, labels):
                     value = tds[1].get_text(strip=True)
                     if value:
                         return value
-    dts = soup.find_all('dt')
-    for dt in dts:
+    # Definition list
+    for dt in soup.find_all('dt'):
         label = dt.get_text(strip=True).lower()
         for key in labels:
             if key in label:
@@ -88,18 +90,16 @@ def extract_detail_by_label(soup, labels):
                     val = dd.get_text(strip=True)
                     if val:
                         return val
-
-
+    # Loose text scanning
     texts = soup.find_all(text=True)
     for i, text in enumerate(texts):
         low_text = text.lower()
         for key in labels:
             if key in low_text:
-                next_text = None
                 if i + 1 < len(texts):
                     next_text = texts[i + 1].strip()
-                if next_text:
-                    return next_text
+                    if next_text:
+                        return next_text
     return None
 
 def fetch_jobs_from_page(url):
@@ -120,10 +120,6 @@ def fetch_jobs_from_page(url):
     rows = tbody.find_all('tr')
     for row in rows:
         cols = row.find_all('td')
-        date_posting = cols[0].get_text(strip=True) if len(cols) > 0 else 'Not Available'
-        job_title_main = cols[1].get_text(strip=True) if len(cols) > 1 else 'Not Available'
-        company_name = cols[2].get_text(strip=True) if len(cols) > 2 else 'Not Available'
-        last_date_apply = cols[3].get_text(strip=True) if len(cols) > 3 else 'Not Available'
         details_url = None
         if len(cols) > 4:
             a_tag = cols[4].find('a', href=True)
@@ -135,14 +131,13 @@ def fetch_jobs_from_page(url):
         job_details = fetch_job_details(details_url) if details_url else {}
 
         jobs.append({
-            'Date of Posting': date_posting,
-            'Job Title': job_details.get('Job Title', job_title_main or 'Not Available'),
-            'Company Name': company_name,
-            'Last Date to Apply': last_date_apply,
+            'JobTitle': job_details.get('JobTitle', 'Not Available'),
             'Location': job_details.get('Location', 'Not Available'),
-            'Experience': job_details.get('Experience', 'Not Available'),
+            'ExperienceRequired': job_details.get('ExperienceRequired', 'Not Available'),
+            'SkillsRequired': job_details.get('SkillsRequired', 'Not Available'),
             'Salary': job_details.get('Salary', 'Not Available'),
-            'Details URL': details_url or 'Not Available'
+            'JobURL': details_url or 'Not Available',
+            'JobDescriptionSummary': job_details.get('JobDescriptionSummary', 'Not Available')
         })
         time.sleep(1)
 
@@ -151,27 +146,25 @@ def fetch_jobs_from_page(url):
 def scrape_all_jobs(base_url, max_pages=3):
     all_jobs = []
     for page in range(1, max_pages + 1):
-        if page == 1:
-            url = base_url
-        else:
-            url = f"{base_url}?page={page}"
+        url = base_url if page == 1 else f"{base_url}?page={page}"
         print(f"Scraping page: {url}")
         jobs = fetch_jobs_from_page(url)
         if not jobs:
             print("No more jobs found, stopping.")
             break
         all_jobs.extend(jobs)
-
     return all_jobs
 
 def save_to_excel(jobs, filename='infopark_jobs_detailed.xlsx'):
-    df = pd.DataFrame(jobs)
+    df = pd.DataFrame(jobs, columns=[
+        'JobTitle', 'Location', 'ExperienceRequired', 'SkillsRequired', 'Salary', 'JobURL', 'JobDescriptionSummary'
+    ])
     df.to_excel(filename, index=False)
     print(f"Saved {len(jobs)} job listings to {filename}")
 
 if __name__ == "__main__":
     import urllib3
-    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)  # hide SSL warnings
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
     jobs = scrape_all_jobs(BASE_URL, max_pages=3)
     save_to_excel(jobs)
